@@ -48,11 +48,17 @@ type netTun struct {
 	mtu            int
 	dnsServers     []netip.Addr
 	hasV4, hasV6   bool
+	pcap           *PcapFile
 }
 
 type Net netTun
 
 func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device, *Net, error) {
+	pcap, err := NewPcapFile("tun.pcap")
+	if err != nil {
+		return nil, nil, err
+	}
+
 	opts := stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4},
@@ -65,6 +71,7 @@ func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device,
 		incomingPacket: make(chan *buffer.View),
 		dnsServers:     dnsServers,
 		mtu:            mtu,
+		pcap:           pcap,
 	}
 	sackEnabledOpt := tcpip.TCPSACKEnabled(true) // TCP SACK is disabled by default
 	tcpipErr := dev.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sackEnabledOpt)
@@ -129,12 +136,20 @@ func (tun *netTun) Read(buf [][]byte, sizes []int, offset int) (int, error) {
 	n, err := view.Read(buf[0][offset:])
 	if err != nil {
 		return 0, err
+
 	}
+	if tun.pcap != nil {
+		tun.pcap.Capture(buf[0][offset : offset+n])
+	}
+
 	sizes[0] = n
 	return 1, nil
 }
 
 func (tun *netTun) Write(buf [][]byte, offset int) (int, error) {
+	if tun.pcap != nil {
+		tun.pcap.Capture(buf...)
+	}
 	for _, buf := range buf {
 		packet := buf[offset:]
 		if len(packet) == 0 {
