@@ -57,12 +57,8 @@ type phdr struct {
 	plen   uint32
 }
 
-func (p *PcapFile) Capture(pkt ...[]byte) error {
-	sz := 0
-	for _, buf := range pkt {
-		sz += len(buf)
-	}
-
+func (p *PcapFile) Capture(pkt []byte) error {
+	sz := len(pkt)
 	now := time.Now()
 	h := phdr{
 		sec:    uint32(now.Unix()),
@@ -73,18 +69,17 @@ func (p *PcapFile) Capture(pkt ...[]byte) error {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	if err := binary.Write(p.fp, binary.BigEndian, &h); err != nil {
 		return err
 	}
 
-	for _, buf := range pkt {
-		n, err := p.fp.Write(buf)
-		if err != nil {
-			return err
-		}
-		if n != len(buf) {
-			return fmt.Errorf("short write %d of %d", n, len(buf))
-		}
+	n, err := p.fp.Write(pkt)
+	if err != nil {
+		return err
+	}
+	if n != sz {
+		return fmt.Errorf("short write %d of %d", n, sz)
 	}
 	return nil
 }
