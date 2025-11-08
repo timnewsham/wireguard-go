@@ -54,9 +54,14 @@ type netTun struct {
 type Net netTun
 
 func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device, *Net, error) {
-	pcap, err := NewPcapFile("tun.pcap")
-	if err != nil {
-		return nil, nil, err
+	fn := os.Getenv("PCAP")
+	var pcap *PcapFile
+	if fn != "" {
+		var err error
+		pcap, err = NewPcapFile(fn)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	opts := stack.Options{
@@ -138,10 +143,6 @@ func (tun *netTun) Read(buf [][]byte, sizes []int, offset int) (int, error) {
 		return 0, err
 
 	}
-	if tun.pcap != nil {
-		tun.pcap.Capture(buf[0][offset : offset+n])
-	}
-
 	sizes[0] = n
 	return 1, nil
 }
@@ -176,6 +177,10 @@ func (tun *netTun) WriteNotify() {
 	}
 
 	view := pkt.ToView()
+	if tun.pcap != nil {
+		tun.pcap.Capture(view.AsSlice())
+	}
+
 	pkt.DecRef()
 
 	tun.incomingPacket <- view

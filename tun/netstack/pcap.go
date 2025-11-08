@@ -4,11 +4,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 )
 
 type PcapFile struct {
 	fp *os.File
+	mu sync.Mutex
 }
 
 func NewPcapFile(fn string) (*PcapFile, error) {
@@ -16,7 +18,9 @@ func NewPcapFile(fn string) (*PcapFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", fn, err)
 	}
-	p := &PcapFile{fp}
+	p := &PcapFile{
+		fp: fp,
+	}
 	if err := p.WriteHeader(); err != nil {
 		defer p.Close()
 		return nil, fmt.Errorf("%s: writing header: %w", fn, err)
@@ -37,12 +41,13 @@ type fhdr struct {
 
 func (p *PcapFile) WriteHeader() error {
 	h := fhdr{
-		magic:    0xa1b23c4d,
-		majv:     2,
+		magic:    0xa1b23c4d, // nanosec timestamp
+		majv:     2,          // 2.4
 		minv:     4,
-		linktype: 0, // 0 = null? for tun
+		snaplen:  128 * 1024,
+		linktype: 101, // LINKTYPE_RAW
 	}
-	return binary.Write(p.fp, binary.LittleEndian, &h)
+	return binary.Write(p.fp, binary.BigEndian, &h)
 }
 
 type phdr struct {
@@ -61,12 +66,14 @@ func (p *PcapFile) Capture(pkt ...[]byte) error {
 	now := time.Now()
 	h := phdr{
 		sec:    uint32(now.Unix()),
-		nsec:   uint32(now.UnixNano() / (1000 * 1000 * 1000)),
+		nsec:   uint32(now.UnixNano() % (1000 * 1000 * 1000)),
 		caplen: uint32(sz),
 		plen:   uint32(sz),
 	}
 
-	if err := binary.Write(p.fp, binary.LittleEndian, &h); err != nil {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := binary.Write(p.fp, binary.BigEndian, &h); err != nil {
 		return err
 	}
 
