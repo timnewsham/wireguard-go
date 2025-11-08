@@ -148,13 +148,13 @@ func (tun *netTun) Read(buf [][]byte, sizes []int, offset int) (int, error) {
 }
 
 func (tun *netTun) Write(buf [][]byte, offset int) (int, error) {
-	if tun.pcap != nil {
-		tun.pcap.Capture(buf...)
-	}
 	for _, buf := range buf {
 		packet := buf[offset:]
 		if len(packet) == 0 {
 			continue
+		}
+		if tun.pcap != nil {
+			tun.pcap.Capture(packet)
 		}
 
 		pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(packet)})
